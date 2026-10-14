@@ -1,8 +1,11 @@
 package main
 
 import "core:fmt"
+import "core:strings"
 import "editor"
 import sdl "vendor:sdl3"
+
+LINE_HEIGHT :: 14
 
 main :: proc() {
 	buffer: editor.Buffer
@@ -35,6 +38,17 @@ main :: proc() {
 
 		sdl.SetRenderDrawColor(renderer, 30, 30, 30, 255)
 		sdl.RenderClear(renderer)
+
+		// first use debug text rendering
+		for line, index in buffer.data {
+			sdl.SetRenderDrawColor(renderer, 255, 255, 255, 255)
+			sdl.RenderDebugText(
+				renderer,
+				20,
+				f32(20 + LINE_HEIGHT * index),
+				strings.clone_to_cstring(line),
+			)
+		}
 
 		sdl.RenderPresent(renderer)
 	}
