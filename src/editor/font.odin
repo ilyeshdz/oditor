@@ -15,16 +15,23 @@ MARGIN :: 20
 
 TEXT_COLOR :: [4]u8{255, 255, 255, 255}
 CURSOR_COLOR :: [4]u8{255, 255, 255, 255}
+CURRENT_LINE_COLOR :: [4]u8{45, 45, 45, 255}
+LINE_NUMBER_COLOR :: [4]u8{110, 110, 110, 255}
+CURRENT_LINE_NUMBER_COLOR :: [4]u8{190, 190, 190, 255}
 
 CURSOR_WIDTH :: 2.0
+GUTTER_PADDING :: 14.0
 
 FontRenderer :: struct {
-	sdl_renderer: ^sdl.Renderer,
-	font:         ^ttf.Font,
-	engine:       ^ttf.TextEngine,
-	texts:        [dynamic]^ttf.Text,
-	line_height:  f32,
-	glyph_height: f32,
+	sdl_renderer:    ^sdl.Renderer,
+	font:            ^ttf.Font,
+	engine:          ^ttf.TextEngine,
+	texts:           [dynamic]^ttf.Text,
+	gutter:          [dynamic]^ttf.Text,
+	gutter_width:    f32,
+	current_number:  int,
+	line_height:     f32,
+	glyph_height:    f32,
 }
 
 open_font :: proc(ptsize: f32) -> ^ttf.Font {
@@ -63,6 +70,7 @@ font_renderer_init :: proc(r: ^FontRenderer, sdl_renderer: ^sdl.Renderer) -> boo
 	r.line_height = f32(ttf.GetFontLineSkip(r.font))
 	r.glyph_height = f32(ttf.GetFontHeight(r.font))
 	r.texts = make([dynamic]^ttf.Text)
+	r.current_number = -1
 
 	return true
 }
@@ -72,6 +80,10 @@ destroy_font_renderer :: proc(r: ^FontRenderer) {
 		ttf.DestroyText(text)
 	}
 	delete(r.texts)
+	for text in r.gutter {
+		ttf.DestroyText(text)
+	}
+	delete(r.gutter)
 	if r.engine != nil {
 		ttf.DestroyRendererTextEngine(r.engine)
 	}
@@ -82,6 +94,8 @@ destroy_font_renderer :: proc(r: ^FontRenderer) {
 }
 
 sync_texts :: proc(r: ^FontRenderer, buf: ^Buffer) {
+	sync_gutter(r, buf)
+
 	if !buf.dirty {
 		return
 	}
@@ -104,6 +118,40 @@ sync_texts :: proc(r: ^FontRenderer, buf: ^Buffer) {
 	}
 
 	buf.dirty = false
+}
+
+sync_gutter :: proc(r: ^FontRenderer, buf: ^Buffer) {
+	if len(r.gutter) == len(buf.data) {
+		return
+	}
+
+	for text in r.gutter {
+		ttf.DestroyText(text)
+	}
+	resize(&r.gutter, len(buf.data))
+
+	digits := len(fmt.tprintf("%d", len(buf.data)))
+	width: c.int
+	label: [16]u8
+
+	for _, index in r.gutter {
+		n := fmt.bprintf(label[:], "%*d", digits, index + 1)
+		text := ttf.CreateText(r.engine, r.font, cstring(raw_data(n)), c.size_t(len(n)))
+		if text == nil {
+			fmt.eprintln("Couldn't create line number text: ", sdl.GetError())
+			continue
+		}
+		ttf.SetTextColor(text, LINE_NUMBER_COLOR[0], LINE_NUMBER_COLOR[1], LINE_NUMBER_COLOR[2], LINE_NUMBER_COLOR[3])
+
+		text_size: c.int
+		if ttf.GetTextSize(text, &text_size, nil) {
+			width = max(width, text_size)
+		}
+		r.gutter[index] = text
+	}
+
+	r.gutter_width = f32(width) + GUTTER_PADDING
+	r.current_number = -1
 }
 
 create_line_text :: proc(r: ^FontRenderer, index: int, buf: ^Buffer) {
@@ -142,7 +190,7 @@ cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 	y := MARGIN + r.line_height * f32(line_index) + (r.line_height - height) / 2
 
 	return sdl.FRect{
-		x = MARGIN + x,
+		x = MARGIN + r.gutter_width + x,
 		y = y,
 		w = CURSOR_WIDTH,
 		h = height,
@@ -152,13 +200,60 @@ cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 draw :: proc(r: ^FontRenderer, buf: ^Buffer) {
 	sync_texts(r, buf)
 
+	if len(r.texts) > 0 {
+		line_index := clamp(buf.cursor_y, 0, len(r.texts) - 1)
+
+		width, height: c.int
+		sdl.GetRenderOutputSize(r.sdl_renderer, &width, &height)
+
+		band := sdl.FRect{
+			x = 0,
+			y = MARGIN + r.line_height * f32(line_index),
+			w = f32(width),
+			h = r.line_height,
+		}
+		sdl.SetRenderDrawColor(
+			r.sdl_renderer,
+			CURRENT_LINE_COLOR[0], CURRENT_LINE_COLOR[1], CURRENT_LINE_COLOR[2], CURRENT_LINE_COLOR[3],
+		)
+		sdl.RenderFillRect(r.sdl_renderer, &band)
+	}
+
+	if len(r.gutter) > 0 {
+		line_index := clamp(buf.cursor_y, 0, len(r.gutter) - 1)
+		if r.current_number != line_index {
+			if r.current_number >= 0 {
+				if prev := r.gutter[r.current_number]; prev != nil {
+					ttf.SetTextColor(prev, LINE_NUMBER_COLOR[0], LINE_NUMBER_COLOR[1], LINE_NUMBER_COLOR[2], LINE_NUMBER_COLOR[3])
+				}
+			}
+			if cur := r.gutter[line_index]; cur != nil {
+				ttf.SetTextColor(cur, CURRENT_LINE_NUMBER_COLOR[0], CURRENT_LINE_NUMBER_COLOR[1], CURRENT_LINE_NUMBER_COLOR[2], CURRENT_LINE_NUMBER_COLOR[3])
+			}
+			r.current_number = line_index
+		}
+	}
+
+	for text, index in r.gutter {
+		if text == nil {
+			continue
+		}
+		number_width: c.int
+		ttf.GetTextSize(text, &number_width, nil)
+		ttf.DrawRendererText(
+			text,
+			MARGIN + r.gutter_width - GUTTER_PADDING - f32(number_width),
+			MARGIN + r.line_height * f32(index),
+		)
+	}
+
 	for text, index in r.texts {
 		if text == nil {
 			continue
 		}
 		ttf.DrawRendererText(
 			text,
-			f32(MARGIN),
+			MARGIN + r.gutter_width,
 			MARGIN + r.line_height * f32(index),
 		)
 	}
