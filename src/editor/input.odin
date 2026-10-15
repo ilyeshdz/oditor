@@ -4,7 +4,7 @@ import sdl "vendor:sdl3"
 
 EVENT_TIMEOUT_MS :: 16
 
-poll_events :: proc(buf: ^Buffer) -> bool {
+poll_events :: proc(buf: ^Buffer, r: ^FontRenderer) -> bool {
 	event: sdl.Event
 
 	if !sdl.WaitEventTimeout(&event, EVENT_TIMEOUT_MS) {
@@ -19,6 +19,10 @@ poll_events :: proc(buf: ^Buffer) -> bool {
 			handle_key(&event.key, buf)
 		case .TEXT_INPUT:
 			insert_text(buf, string(event.text.text))
+		case .MOUSE_BUTTON_DOWN:
+			handle_mouse_button(&event.button, buf, r)
+		case .MOUSE_WHEEL:
+			handle_mouse_wheel(&event.wheel, buf)
 		}
 		if !sdl.PollEvent(&event) {
 			break
@@ -62,5 +66,31 @@ handle_key :: proc(key: ^sdl.KeyboardEvent, buf: ^Buffer) {
 		delete_forward(buf)
 	case sdl.K_RETURN, sdl.K_KP_ENTER:
 		insert_newline(buf)
+	}
+}
+
+handle_mouse_button :: proc(button: ^sdl.MouseButtonEvent, buf: ^Buffer, r: ^FontRenderer) {
+	if button.button != sdl.BUTTON_LEFT {
+		return
+	}
+
+	line, col, ok := cursor_at_point(r, buf, button.x, button.y)
+	if !ok {
+		return
+	}
+
+	buf.cursor_y = line
+	buf.cursor_x = col
+	buf.goal_x = col
+}
+
+handle_mouse_wheel :: proc(wheel: ^sdl.MouseWheelEvent, buf: ^Buffer) {
+	steps := int(wheel.y)
+	for _ in 0 ..< abs(steps) {
+		if steps > 0 {
+			cursor_up(buf)
+		} else {
+			cursor_down(buf)
+		}
 	}
 }

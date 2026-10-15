@@ -2,6 +2,7 @@ package editor
 
 import "core:c"
 import "core:fmt"
+import "core:unicode/utf8"
 import sdl "vendor:sdl3"
 import ttf "vendor:sdl3/ttf"
 
@@ -195,6 +196,41 @@ cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 		w = CURSOR_WIDTH,
 		h = height,
 	}
+}
+
+cursor_at_point :: proc(r: ^FontRenderer, buf: ^Buffer, window_x, window_y: f32) -> (line, col: int, ok: bool) {
+	sync_texts(r, buf)
+
+	if len(r.texts) == 0 {
+		return 0, 0, false
+	}
+
+	x, y: f32
+	if !sdl.RenderCoordinatesFromWindow(r.sdl_renderer, window_x, window_y, &x, &y) {
+		return 0, 0, false
+	}
+
+	line = int((y - MARGIN) / r.line_height)
+	line = clamp(line, 0, len(r.texts) - 1)
+
+	text := r.texts[line]
+	if text == nil {
+		return line, 0, true
+	}
+
+	substring: ttf.SubString
+	if !ttf.GetTextSubStringForPoint(text, c.int(x - (MARGIN + r.gutter_width)), 0, &substring) {
+		return line, 0, true
+	}
+
+	offset := int(substring.offset)
+	line_text := buf.data[line]
+	if offset > len(line_text) {
+		offset = len(line_text)
+	}
+
+	col = utf8.rune_count(line_text[:offset])
+	return line, col, true
 }
 
 draw :: proc(r: ^FontRenderer, buf: ^Buffer) {

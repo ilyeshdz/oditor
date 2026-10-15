@@ -7,6 +7,7 @@ import "core:unicode/utf8"
 
 Buffer :: struct {
 	data:       [dynamic]string,
+	path:       string,
 	cursor_x:   int,
 	cursor_y:   int,
 	goal_x:     int,
@@ -15,9 +16,12 @@ Buffer :: struct {
 	dirty_to:   int,
 }
 
-init :: proc(buf: ^Buffer) {
+init :: proc(buf: ^Buffer, path := "") {
 	buf^ = {}
 
+	if path != "" {
+		buf.path = strings.clone(path)
+	}
 	append(&buf.data, "")
 	mark_dirty(buf, 0, 0)
 }
@@ -34,6 +38,8 @@ init_from_file :: proc(
 		return err
 	}
 	defer delete(content, allocator)
+
+	buf.path = strings.clone(file_path, allocator)
 
 	lines := strings.split_lines(string(content), allocator)
 	defer delete(lines, allocator)
@@ -57,6 +63,7 @@ destroy_buffer :: proc(buf: ^Buffer) {
 		delete(line)
 	}
 	delete(buf.data)
+	delete(buf.path)
 	buf^ = {}
 }
 
