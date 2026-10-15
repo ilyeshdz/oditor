@@ -6,15 +6,15 @@ import "core:unicode/utf8"
 
 Buffer :: struct {
 	data:     [dynamic]string,
-	cursor_x: int, // rune index (column) inside the current line
-	cursor_y: int, // index of the current line
-	goal_x:   int, // rune column we try to keep when moving up/down
-	revision: int, // bumped whenever `data` changes, used to sync rendered text
+	cursor_x: int,
+	cursor_y: int,
+	goal_x:   int,
+	revision: int,
 }
 
 init :: proc(buf: ^Buffer) {
 	buf^ = {}
-	// A buffer always has at least one (empty) line.
+
 	append(&buf.data, "")
 	buf.revision = 1
 }
@@ -56,7 +56,6 @@ destroy_buffer :: proc(buf: ^Buffer) {
 	buf^ = {}
 }
 
-// current_line returns the line the cursor is on.
 current_line :: proc(buf: ^Buffer) -> string {
 	if buf.cursor_y < 0 || buf.cursor_y >= len(buf.data) {
 		return ""
@@ -64,7 +63,6 @@ current_line :: proc(buf: ^Buffer) -> string {
 	return buf.data[buf.cursor_y]
 }
 
-// clamp_cursor forces the cursor to stay inside the buffer, e.g. after load.
 clamp_cursor :: proc(buf: ^Buffer) {
 	if len(buf.data) == 0 {
 		append(&buf.data, "")
@@ -74,8 +72,6 @@ clamp_cursor :: proc(buf: ^Buffer) {
 	buf.goal_x = buf.cursor_x
 }
 
-// rune_to_byte_offset converts a rune column into a byte offset, clamped to
-// the line. Byte offsets are what the text engine uses internally.
 rune_to_byte_offset :: proc(line: string, col: int) -> int {
 	if col <= 0 {
 		return 0
@@ -95,7 +91,6 @@ cursor_left :: proc(buf: ^Buffer) {
 	if buf.cursor_x > 0 {
 		buf.cursor_x -= 1
 	} else if buf.cursor_y > 0 {
-		// Wrap to the end of the previous line.
 		buf.cursor_y -= 1
 		buf.cursor_x = utf8.rune_count(buf.data[buf.cursor_y])
 	}
@@ -106,7 +101,6 @@ cursor_right :: proc(buf: ^Buffer) {
 	if buf.cursor_x < utf8.rune_count(current_line(buf)) {
 		buf.cursor_x += 1
 	} else if buf.cursor_y + 1 < len(buf.data) {
-		// Wrap to the beginning of the next line.
 		buf.cursor_y += 1
 		buf.cursor_x = 0
 	}
@@ -117,7 +111,6 @@ cursor_up :: proc(buf: ^Buffer) {
 	if buf.cursor_y > 0 {
 		buf.cursor_y -= 1
 	}
-	// `goal_x` is kept so moving back onto a longer line restores the column.
 	buf.cursor_x = min(buf.goal_x, utf8.rune_count(current_line(buf)))
 }
 

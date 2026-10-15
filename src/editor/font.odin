@@ -13,22 +13,19 @@ FONT_FALLBACKS :: [2]cstring{
 FONT_SIZE :: 18
 MARGIN :: 20
 
-// Colors are RGBA bytes, since the renderer takes them as separate arguments.
 TEXT_COLOR :: [4]u8{255, 255, 255, 255}
 CURSOR_COLOR :: [4]u8{255, 255, 255, 255}
 
 CURSOR_WIDTH :: 2.0
 
-// FontRenderer owns everything font related: the font itself, the text engine,
-// the cached text object of every line, and the drawing of both text and cursor.
 FontRenderer :: struct {
 	sdl_renderer:    ^sdl.Renderer,
 	font:            ^ttf.Font,
 	engine:          ^ttf.TextEngine,
 	texts:           [dynamic]^ttf.Text,
-	line_height:     f32, // distance between two baselines
-	glyph_height:    f32, // ascent + descent, used for the cursor height
-	synced_revision: int, // buffer revision the cached texts were built from
+	line_height:     f32,
+	glyph_height:    f32,
+	synced_revision: int,
 }
 
 open_font :: proc(ptsize: f32) -> ^ttf.Font {
@@ -85,8 +82,6 @@ destroy_font_renderer :: proc(r: ^FontRenderer) {
 	r^ = {}
 }
 
-// sync_texts rebuilds the cached text of every line when the buffer changed.
-// While only moving the cursor around, nothing has to be rebuilt.
 sync_texts :: proc(r: ^FontRenderer, buf: ^Buffer) {
 	if r.synced_revision == buf.revision && len(r.texts) == len(buf.data) {
 		return
@@ -110,10 +105,6 @@ sync_texts :: proc(r: ^FontRenderer, buf: ^Buffer) {
 	r.synced_revision = buf.revision
 }
 
-// cursor_rect computes where the cursor should be drawn, in pixels, by asking
-// the text engine for the substring sitting at the cursor's byte offset. That
-// gives us the exact position the renderer used for the glyphs, including the
-// end of a (possibly empty) line, instead of guessing from a fixed cell width.
 cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 	if len(r.texts) == 0 {
 		return {}
@@ -128,7 +119,6 @@ cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 		x = f32(substring.rect.x)
 	}
 
-	// Center the caret vertically inside the line box.
 	height := max(r.glyph_height, 1)
 	y := MARGIN + r.line_height * f32(line_index) + (r.line_height - height) / 2
 
