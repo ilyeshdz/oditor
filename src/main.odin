@@ -36,6 +36,12 @@ main :: proc() {
 	defer sdl.DestroyRenderer(renderer)
 	defer sdl.DestroyWindow(window)
 
+	if !sdl.StartTextInput(window) {
+		fmt.eprintln("Couldn't start text input: ", sdl.GetError())
+		return
+	}
+	defer _ = sdl.StopTextInput(window)
+
 	font_renderer: editor.FontRenderer
 	if !editor.font_renderer_init(&font_renderer, renderer) {
 		return

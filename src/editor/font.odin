@@ -19,13 +19,12 @@ CURSOR_COLOR :: [4]u8{255, 255, 255, 255}
 CURSOR_WIDTH :: 2.0
 
 FontRenderer :: struct {
-	sdl_renderer:    ^sdl.Renderer,
-	font:            ^ttf.Font,
-	engine:          ^ttf.TextEngine,
-	texts:           [dynamic]^ttf.Text,
-	line_height:     f32,
-	glyph_height:    f32,
-	synced_revision: int,
+	sdl_renderer: ^sdl.Renderer,
+	font:         ^ttf.Font,
+	engine:       ^ttf.TextEngine,
+	texts:        [dynamic]^ttf.Text,
+	line_height:  f32,
+	glyph_height: f32,
 }
 
 open_font :: proc(ptsize: f32) -> ^ttf.Font {
@@ -83,26 +82,44 @@ destroy_font_renderer :: proc(r: ^FontRenderer) {
 }
 
 sync_texts :: proc(r: ^FontRenderer, buf: ^Buffer) {
-	if r.synced_revision == buf.revision && len(r.texts) == len(buf.data) {
+	if !buf.dirty {
 		return
 	}
 
-	for text in r.texts {
-		ttf.DestroyText(text)
-	}
-	clear(&r.texts)
+	from := clamp(buf.dirty_from, 0, len(buf.data) - 1)
+	to := clamp(buf.dirty_to, from, len(buf.data) - 1)
 
-	for line in buf.data {
-		text := ttf.CreateText(r.engine, r.font, cstring(raw_data(line)), c.size_t(len(line)))
-		if text == nil {
-			fmt.eprintln("Couldn't create text: ", sdl.GetError())
-			continue
+	if len(r.texts) == len(buf.data) {
+		for i in from ..= to {
+			create_line_text(r, i, buf)
 		}
-		ttf.SetTextColor(text, TEXT_COLOR[0], TEXT_COLOR[1], TEXT_COLOR[2], TEXT_COLOR[3])
-		append(&r.texts, text)
+	} else {
+		for i in from ..< len(r.texts) {
+			ttf.DestroyText(r.texts[i])
+		}
+		resize(&r.texts, len(buf.data))
+		for i in from ..< len(buf.data) {
+			create_line_text(r, i, buf)
+		}
 	}
 
-	r.synced_revision = buf.revision
+	buf.dirty = false
+}
+
+create_line_text :: proc(r: ^FontRenderer, index: int, buf: ^Buffer) {
+	if r.texts[index] != nil {
+		ttf.DestroyText(r.texts[index])
+		r.texts[index] = nil
+	}
+
+	line := buf.data[index]
+	text := ttf.CreateText(r.engine, r.font, cstring(raw_data(line)), c.size_t(len(line)))
+	if text == nil {
+		fmt.eprintln("Couldn't create text: ", sdl.GetError())
+		return
+	}
+	ttf.SetTextColor(text, TEXT_COLOR[0], TEXT_COLOR[1], TEXT_COLOR[2], TEXT_COLOR[3])
+	r.texts[index] = text
 }
 
 cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
@@ -114,9 +131,11 @@ cursor_rect :: proc(r: ^FontRenderer, buf: ^Buffer) -> sdl.FRect {
 	offset := rune_to_byte_offset(current_line(buf), buf.cursor_x)
 
 	x: f32
-	substring: ttf.SubString
-	if ttf.GetTextSubString(r.texts[line_index], c.int(offset), &substring) {
-		x = f32(substring.rect.x)
+	if text := r.texts[line_index]; text != nil {
+		substring: ttf.SubString
+		if ttf.GetTextSubString(text, c.int(offset), &substring) {
+			x = f32(substring.rect.x)
+		}
 	}
 
 	height := max(r.glyph_height, 1)
@@ -134,6 +153,9 @@ draw :: proc(r: ^FontRenderer, buf: ^Buffer) {
 	sync_texts(r, buf)
 
 	for text, index in r.texts {
+		if text == nil {
+			continue
+		}
 		ttf.DrawRendererText(
 			text,
 			f32(MARGIN),
